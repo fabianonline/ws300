@@ -37,7 +37,7 @@ end
 
 str_relative_yesterday = "%+.1f" % (actual[:s9_temp]-yesterday[:s9_temp]) if yesterday
 
-tweet = "Aktuell: #{str_temp_now_rel} #{str_temp_now}°C#{str_regen}."
+tweet = "Es ist #{Time.now.strftime("%H:%M")}. Temperatur: #{str_temp_now_rel} #{str_temp_now}°C#{str_regen}."
 tweet+= "\nVergleich zu gestern: #{str_relative_yesterday}°C." if yesterday
 
 client.update(tweet, :lat=>config["twitter"]["place"]["lat"], :lon=>config["twitter"]["place"]["lon"], :place_id=>config["twitter"]["place"]["place_id"], :display_coordinates=>1)
