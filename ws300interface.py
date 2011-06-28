@@ -1,10 +1,21 @@
-import serial, time, random
+import serial, time, random, sys
+from datetime import datetime, timedelta
+
+# uncomment this to use mysql-db
+import MySQLdb as mdb
+conn = mdb.connect('localhost', 'ws300', 'Asbxhb24EQsvWLpV', 'ws300')
+use_mysql = True
 
 class ws300:
   data = ""
   devData = ""
+  isLiveData = True
   # How many messages may be lost before a sensor gets noted as being "offline"
   sensorOfflineAfter = 2
+  # force this interface to only use live data
+  forceLiveData = False
+  # max age in minutes to use old values from the database
+  maxOldDataAge = 6
   
   def unescapeRawData(self, data):
     realData = ""
@@ -35,6 +46,17 @@ class ws300:
     return realData
     
   def connectAndGetData(self):
+    # try to get the latest record from the db
+    if use_mysql and not self.forceLiveData:
+        cursor = conn.cursor()
+        cursor.execute("SELECT time, raw_data, raw_dev_data FROM ws300 ORDER BY time DESC LIMIT 1")
+        row = cursor.fetchone()
+        if (row and (datetime.now() - row[0]) < timedelta(minutes=self.maxOldDataAge) and row[1] and row[2] and len(row[1])==37 and len(row[2])==14):
+            self.data = row[1]
+            self.devData = row[2]
+            self.isLiveData = False
+            return ""
+    
     i = 1
     while i<30 and (self.data=="" or self.devData=="") :
       if i>1:
@@ -55,10 +77,6 @@ class ws300:
           result = ser.read(100)
           if result[0:2]=='\xFE\x33' and result[-1]=='\xFC':
             self.data = self.processSensorData(result)
-            #pos=0
-            #while pos<len(self.data):
-            #  print(ord(self.data[pos]))
-            #  pos=pos+1
         
         if self.devData=="":
           ser.write('\xFE\x32\xFC')
@@ -73,9 +91,34 @@ class ws300:
       
     if self.data=="" or self.devData=="":
       raise Exception('Couldn\'t get data from WS300.')
-    
-  def __init__(self):
+
+  def __init__(self, forceLiveData=False):
+    self.forceLiveData = forceLiveData
     self.connectAndGetData()
+    if (self.isLiveData and use_mysql):
+      self.save_data_to_mysql()
+
+  def save_data_to_mysql(self):
+    string = "INSERT INTO ws300 SET time=NOW()"
+    for i in range(0, 10):
+      string += ", s%d_status=%s" % (i, self.getSensorStatusValue(i))
+      if self.isSensorWorking(i):
+        string += ", s%d_temp=%s" % (i, self.getTemperature(i))
+        string += ", s%d_humi=%s" % (i, self.getHumidity(i))
+    if self.isSensorWorking(9):
+      string += ", pressure=%s" % self.getPressure()
+      string += ", rain_abs=%f" % self.getRainAmount()
+      string += ", wind=%d" % self.getWindspeed()
+    string += ", raw_data=%s, raw_dev_data=%s"
+    cursor = conn.cursor();
+    cursor.execute("SELECT rain_abs FROM ws300 WHERE rain_abs IS NOT NULL ORDER BY time DESC LIMIT 1")
+    old_rain = cursor.fetchone()
+    if old_rain:
+      diff = self.getRainAmount() - float(old_rain[0])
+      if diff >= 0:
+        string += ", rain_rel=%.5f" % diff
+    cursor.execute(string, (mdb.Binary(self.data), mdb.Binary(self.devData)))
+    conn.commit()
 
   def getTemperature(self, sensor):
     if sensor>=1 and sensor<=9:
@@ -177,9 +220,9 @@ class ws300:
     w = self.getWindspeed()
     if w=="UNKNOWN":
       return "UNKNOWN"
-    #print t, w
     if w<1.34:
       return t
     return round(self.calcWindchillTemperature(t, w), 2)
-    
+
+
   
