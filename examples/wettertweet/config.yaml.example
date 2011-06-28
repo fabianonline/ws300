@@ -1,0 +1,15 @@
+twitter:
+    consumer_key:    ""
+    consumer_secret: ""
+    token:           ""
+    secret:          ""
+    place:
+        lat:         "12.34567"
+        lon:         "9.87654"
+        place_id:    ""
+
+mysql:
+    host: localhost
+    user: root
+    password: 
+    database: ws300
